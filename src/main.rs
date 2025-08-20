@@ -15,6 +15,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 mod application;
+mod config;
 mod graph_manager;
 mod pipewire_connection;
 mod ui;
@@ -86,7 +87,7 @@ pub enum PipewireMessage {
     Disconnected,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NodeType {
     Input,
     Output,

@@ -1,0 +1,21 @@
+# Example Helvum Configuration
+
+[layout]
+columns = [
+  { x = 20, name = "sources" },
+  { x = 500, name = "filters" },
+  { x = 950, name = "apps" },
+  { x = 1200, name = "sinks" }
+]
+
+rules = [
+    { pattern = "Firefox*", column = "sources" },
+    { pattern = "vlc*", column = "sources" },
+    { pattern = "Built-in*", column = "sources", node_type = "source" },
+    { pattern = "Built-in*", column = "sinks", node_type = "sink" },
+]
+
+[layout.defaults]
+source = 20
+other  = 500
+sink   = 1200

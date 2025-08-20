@@ -29,7 +29,7 @@ use adw::{
 use std::cmp::Ordering;
 
 use super::{Link, Node, Port};
-use crate::NodeType;
+use crate::{config::Config, NodeType};
 
 const CANVAS_SIZE: f64 = 5000.0;
 
@@ -96,6 +96,9 @@ mod imp {
 
         // This keeps track of an ongoing move view gesture.
         pub move_view_state: Cell<(f64, f64)>,
+
+        // Cache configuration from file
+        pub config: RefCell<Option<Config>>,
     }
 
     impl Default for GraphView {
@@ -112,6 +115,7 @@ mod imp {
                 zoom_gesture_initial_zoom: Default::default(),
                 zoom_gesture_anchor: Default::default(),
                 move_view_state: Default::default(),
+                config: Default::default(),
             }
         }
     }
@@ -731,6 +735,17 @@ impl GraphView {
         glib::Object::new()
     }
 
+    /// Get the cached configuration, creating it if not already cached
+    fn get_config(&self) -> Config {
+        let mut cached = self.imp().config.borrow_mut();
+
+        if cached.is_none() {
+            *cached = Some(Config::new());
+        }
+
+        cached.as_ref().unwrap().clone()
+    }
+
     pub fn zoom_factor(&self) -> f64 {
         self.property("zoom-factor")
     }
@@ -777,14 +792,15 @@ impl GraphView {
         let imp = self.imp();
         node.set_parent(self);
 
-        // Place widgets in colums of 3, growing down
-        let x = if let Some(node_type) = node_type {
-            match node_type {
-                NodeType::Output => 20.0,
-                NodeType::Input => 820.0,
-            }
-        } else {
-            420.0
+        let node_name = node.property::<String>("node-name");
+
+        let x = match self.get_config().get_column(&node_name, node_type.as_ref()) {
+            Some((x_from_config, _)) => x_from_config,
+            None => match node_type {
+                Some(NodeType::Output) => 20.0,
+                Some(NodeType::Input) => 820.0,
+                None => 420.0,
+            },
         };
 
         // FIXME: We are currently using a constant 120 for the height of the nodes, this could cause problems for nodes with a lot of ports.
