@@ -147,14 +147,32 @@ mod imp {
                 Some("PATH"),
             );
 
+            obj.add_main_option(
+                "config",
+                glib::char::Char::from(b'c'),
+                glib::OptionFlags::NONE,
+                glib::OptionArg::String,
+                "Configuration file to use",
+                Some("PATH"),
+            );
+
             let current_remote_label = obj.imp().window.current_remote_label();
-            obj.connect_handle_local_options(clone!(@strong pw_sender => move |_, opts| {
+            let graph_view = obj.imp().window.graph();
+            obj.connect_handle_local_options(clone!(@strong pw_sender, @strong graph_view => move |_, opts| {
                 match opts.lookup::<String>("socket") {
                     Ok(p) => {
                         current_remote_label.set_label(p.as_deref().unwrap_or(DEFAULT_REMOTE_NAME));
                         pw_sender.send(GtkMessage::Connect(p)).unwrap();
                     },
                     Err(e) => error!("Invalid socket path: {e}"),
+                }
+
+                match opts.lookup::<String>("config") {
+                    Ok(config_path_option) => {
+                        let config_path = config_path_option.map(std::path::PathBuf::from);
+                        graph_view.set_config_from_path(config_path);
+                    },
+                    Err(e) => error!("Invalid config path: {e}"),
                 }
                 -1
             }));

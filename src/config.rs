@@ -40,50 +40,48 @@ pub struct MatchRule {
 impl Config {
     /// Create a new Config instance and load from default locations
     pub fn new() -> Self {
-        match Self::load() {
-            Some(config) => config,
-            None => {
-                log::info!("No configuration file found");
-                Config::default()
-            }
-        }
+        Self::load(None)
     }
 
-    pub fn load() -> Option<Self> {
-        let paths = [
-            Some(std::path::PathBuf::from("layout.toml")),
-            dirs::config_dir().map(|mut p| {
-                p.push("helvum");
-                p.push("layout.toml");
-                p
-            }),
-        ];
+    /// Create a new Config instance and load from specified path or default locations
+    pub fn load(config_path: Option<std::path::PathBuf>) -> Self {
+        let mut paths = Vec::new();
 
-        for path in paths.into_iter().flatten() {
-            log::debug!(
-                "trying to load configuration from '{}'",
-                path.canonicalize().unwrap_or(path.clone()).display()
-            );
-            if path.exists() {
-                match Self::load_from_file(&path) {
-                    Ok(config) => {
-                        log::info!(
-                            "Loaded configuration from '{}'",
-                            path.canonicalize().unwrap_or(path).display()
-                        );
-                        return Some(config);
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to load configuration from {}: {}",
-                            path.display(),
-                            e
-                        );
-                    }
+        if let Some(parameter_path) = config_path {
+            paths.push(parameter_path);
+        }
+
+        paths.push(std::path::PathBuf::from("layout.toml"));
+
+        if let Some(default_config_path) = dirs::config_dir().map(|mut p| {
+            p.push("helvum");
+            p.push("layout.toml");
+            p
+        }) {
+            paths.push(default_config_path);
+        }
+
+        for path in paths {
+            if !path.exists() {
+                continue;
+            }
+
+            match Self::load_from_file(&path) {
+                Ok(config) => {
+                    log::info!(
+                        "Loaded configuration from '{}'",
+                        path.canonicalize().unwrap_or(path).display()
+                    );
+                    return config;
+                }
+                Err(e) => {
+                    log::error!("Failed to load config from '{}': {}", path.display(), e);
                 }
             }
         }
-        None
+
+        log::info!("No configuration file found, using defaults");
+        Config::default()
     }
 
     fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {

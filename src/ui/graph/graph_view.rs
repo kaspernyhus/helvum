@@ -735,6 +735,12 @@ impl GraphView {
         glib::Object::new()
     }
 
+    /// Set configuration from a specific path
+    pub fn set_config_from_path(&self, config_path: Option<std::path::PathBuf>) {
+        let mut cached = self.imp().config.borrow_mut();
+        *cached = Some(Config::load(config_path));
+    }
+
     /// Get the cached configuration, creating it if not already cached
     fn get_config(&self) -> Config {
         let mut cached = self.imp().config.borrow_mut();
