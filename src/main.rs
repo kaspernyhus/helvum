@@ -16,6 +16,7 @@
 
 mod application;
 mod config;
+mod constants;
 mod graph_manager;
 mod pipewire_connection;
 mod ui;

@@ -29,9 +29,7 @@ use adw::{
 use std::cmp::Ordering;
 
 use super::{Link, Node, Port};
-use crate::{config::Config, NodeType};
-
-const CANVAS_SIZE: f64 = 5000.0;
+use crate::{config::Config, constants::*, NodeType};
 
 mod imp {
     use super::*;
@@ -794,8 +792,86 @@ impl GraphView {
         self.set_property("zoom-factor", zoom_factor);
     }
 
-    pub fn add_node(&self, node: Node, node_type: Option<NodeType>) {
+    /// Collects all nodes in a vertical column starting from a given y-coordinate.
+    ///
+    /// Returns nodes that are within `COLUMN_WIDTH` of the specified x-coordinate
+    /// and have y-coordinates greater than or equal to `from_y`. The results are
+    /// sorted by y-coordinate in ascending order.
+    ///
+    /// # Arguments
+    /// * `x` - The x-coordinate defining the center of the column
+    /// * `from_y` - The minimum y-coordinate to include nodes from
+    ///
+    /// # Returns
+    /// A vector of tuples containing (Node, Point) pairs sorted by y-coordinate
+    fn collect_column_nodes(&self, x: f32, from_y: f32) -> Vec<(Node, Point)> {
         let imp = self.imp();
+        let mut column_nodes: Vec<_> = imp
+            .nodes
+            .borrow()
+            .iter()
+            .filter_map(|(node, position)| {
+                let is_in_column =
+                    ((x - position.x()).abs() < COLUMN_WIDTH) && (position.y() >= from_y);
+                is_in_column.then_some((node.clone(), *position))
+            })
+            .collect();
+
+        column_nodes.sort_unstable_by(|(_, pos_a), (_, pos_b)| {
+            pos_a.y().partial_cmp(&pos_b.y()).unwrap_or(Ordering::Less)
+        });
+
+        column_nodes
+    }
+
+    /// Recursively repositions nodes in a column to maintain minimum gap requirements.
+    ///
+    /// Starting from `from_y`, examines all node pairs in the column and moves nodes
+    /// downward if the gap between them is less than `MIN_NODE_GAP`. When a node is
+    /// moved, recursively repositions all nodes below it to prevent cascading overlaps.
+    ///
+    /// # Arguments
+    /// * `x` - The x-coordinate defining the column to reposition
+    /// * `from_y` - The y-coordinate to start repositioning from (inclusive)
+    fn reposition_nodes_in_column(&self, x: f32, from_y: f32) {
+        let column = self.collect_column_nodes(x, from_y);
+
+        for node_pair in column.windows(2) {
+            let (upper_node, upper_node_position) = &node_pair[0];
+            let (lower_node, lower_node_position) = &node_pair[1];
+
+            let upper_node_bottom = upper_node_position.y() + self.node_height(upper_node);
+            let node_gap = lower_node_position.y() - upper_node_bottom;
+
+            if node_gap < MIN_NODE_GAP {
+                let new_lower_node_y = upper_node_bottom + MIN_NODE_GAP;
+
+                self.move_node(
+                    lower_node,
+                    &Point::new(lower_node_position.x(), new_lower_node_y),
+                );
+
+                self.reposition_nodes_in_column(x, new_lower_node_y);
+                return;
+            }
+        }
+    }
+
+    pub fn add_port_to_node(&self, node: &Node) {
+        let node_position = self.node_position(node).unwrap();
+
+        let column = self.collect_column_nodes(node_position.x(), node_position.y());
+
+        if let Some((_, next_node_position)) = column.get(1) {
+            let node_height = self.node_height(node);
+            // If there is not enough space below the node, reposition all nodes in the column
+            if (next_node_position.y() - node_position.y() - node_height) < MIN_NODE_GAP {
+                self.reposition_nodes_in_column(node_position.x(), node_position.y());
+            }
+        }
+    }
+
+    pub fn add_node(&self, node: Node, node_type: Option<NodeType>) {
         node.set_parent(self);
 
         let node_name = node.property::<String>("node-name");
@@ -809,42 +885,24 @@ impl GraphView {
             },
         };
 
-        // FIXME: We are currently using a constant 120 for the height of the nodes, this could cause problems for nodes with a lot of ports.
-        let node_height = 120.0;
+        let column = self.collect_column_nodes(x, 0.0);
 
-        let mut column = imp
-            .nodes
-            .borrow()
-            .iter()
-            .map(|node| {
-                // Map nodes to their locations
-                let point = self.node_position(&node.0.clone().upcast()).unwrap();
-                (point.x(), point.y())
-            })
-            .filter(|(x2, _)| {
-                // Only look for other nodes that have a similar x coordinate
-                (x - x2).abs() < 50.0
-            })
-            .collect::<Vec<_>>();
-        column
-            .sort_unstable_by(|(_, a_y), (_, b_y)| a_y.partial_cmp(b_y).unwrap_or(Ordering::Less));
         let y = column
             .windows(2)
-            .map(|w| {
-                // Calculate space between this node and the next
-                let (a_y, b_y) = (w[0].1, w[1].1);
-                let diff_next = b_y - a_y;
-                (a_y, diff_next)
+            .find_map(|pair| {
+                let (upper_node, upper_pos) = &pair[0];
+                let (_, lower_pos) = &pair[1];
+                let upper_bottom = upper_pos.y() + self.node_height(upper_node);
+                let available_gap = lower_pos.y() - upper_bottom;
+                (available_gap >= MIN_PLACEMENT_GAP).then_some(upper_bottom + MIN_NODE_GAP)
             })
-            .find(|(_y, diff_next)| *diff_next >= 2.0 * node_height)
-            .map_or(
-                // If we didn't find enough space between nodes, append to bottom
-                column.last().map_or(20_f32, |(_x, y)| y + node_height),
-                // Put new node after below the node we found
-                |(y, _)| y + node_height,
-            );
+            .unwrap_or_else(|| {
+                column.last().map_or(TOP_MARGIN, |(last_node, last_pos)| {
+                    last_pos.y() + self.node_height(last_node) + MIN_NODE_GAP
+                })
+            });
 
-        imp.nodes.borrow_mut().insert(node, Point::new(x, y));
+        self.imp().nodes.borrow_mut().insert(node, Point::new(x, y));
     }
 
     pub fn remove_node(&self, node: &Node) {
@@ -894,6 +952,12 @@ impl GraphView {
     /// The returned position is in canvas-space (non-zoomed, (0, 0) fixed in the middle of the canvas).
     pub(super) fn node_position(&self, node: &Node) -> Option<Point> {
         self.imp().nodes.borrow().get(node).copied()
+    }
+
+    /// Get the height of the specified node inside the graphview.
+    pub fn node_height(&self, node: &Node) -> f32 {
+        let (_, natural_size) = node.preferred_size();
+        natural_size.height() as f32
     }
 
     pub(super) fn move_node(&self, widget: &Node, point: &Point) {

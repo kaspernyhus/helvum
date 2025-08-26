@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::constants::COLUMN_WIDTH;
 use crate::NodeType;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -120,12 +121,12 @@ impl Config {
 
         for window in sorted_columns.windows(2) {
             let distance = (window[1].x - window[0].x).abs();
-            if distance < 50.0 {
+            if distance < COLUMN_WIDTH {
                 return Err(format!(
                     "Columns '{}' (x={}) and '{}' (x={}) are too close together. Minimum distance should be {} pixels.",
                     window[0].name, window[0].x,
                     window[1].name, window[1].x,
-                    50.0
+                    COLUMN_WIDTH
                 ));
             }
         }

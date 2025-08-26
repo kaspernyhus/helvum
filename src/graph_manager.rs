@@ -190,6 +190,8 @@ mod imp {
             items.insert(id, port.clone().upcast());
 
             node.add_port(port);
+
+            self.obj().graph().add_port_to_node(&node);
         }
 
         fn port_media_type_changed(&self, id: u32, media_type: MediaType) {
